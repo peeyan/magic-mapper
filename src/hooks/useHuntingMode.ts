@@ -1,10 +1,11 @@
 import { useState, useEffect, useCallback } from 'react';
 
-export const useHuntingMode = (onCapture: (text: string) => void) => {
+export const useHuntingMode = (onPickText: (text: string) => void) => {
   const [isHunting, setIsHunting] = useState(false);
 
   const handleMouseOver = useCallback((e: MouseEvent) => {
     const target = e.target as HTMLElement;
+    if (target.closest('#magic-mapper-root') || target.closest('[data-magic-mapper]')) return;
     target.style.outline = '3px solid #ff7b00';
     target.style.cursor = 'crosshair';
   }, []);
@@ -16,20 +17,22 @@ export const useHuntingMode = (onCapture: (text: string) => void) => {
   }, []);
 
   const handleClick = useCallback((e: MouseEvent) => {
+    const target = e.target as HTMLElement;
+    if (target.closest('#magic-mapper-root') || target.closest('[data-magic-mapper]')) {
+      return; 
+    }
+
     e.preventDefault();
     e.stopPropagation();
 
-    const target = e.target as HTMLElement;
     const text = target.innerText?.trim();
-
     if (text) {
-      onCapture(text);
-      setIsHunting(false);
+      onPickText(text);
     }
 
     target.style.outline = '';
     target.style.cursor = '';
-  }, [onCapture]);
+  }, [onPickText]);
 
   useEffect(() => {
     if (isHunting) {
