@@ -1,0 +1,18 @@
+{
+  "manifest_version": 3,
+  "name": "Magic Mapper",
+  "version": "1.0.0",
+  "description": "直感的にWeb要素をストックして貼り付ける神ツール！",
+  "action": {
+    "default_popup": "index.html"
+  },
+  "permissions": [
+    "storage"
+  ],
+  "content_scripts": [
+    {
+      "js": ["src/content.tsx"],
+      "matches": ["<all_urls>"]
+    }
+  ]
+}
