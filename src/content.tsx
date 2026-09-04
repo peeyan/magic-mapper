@@ -1,23 +1,18 @@
-import React from "react";
-import { createRoot } from "react-dom/client";
-import { StockPalette } from "./components/StockPalette";
+import React from 'react'
+import ReactDOM from 'react-dom/client'
+import { StockPalette } from './components/StockPalette'
 
-// 1. Reactを入れるための箱（div）を作る
-const container = document.createElement("div");
-container.id = "magic-mapper-root";
-document.body.appendChild(container);
+if (!document.getElementById('magic-mapper-root')) {
+  const root = document.createElement('div');
+  root.id = 'magic-mapper-root';
 
-// 2. サイトのCSSから守るバリア（Shadow DOM）を張る！
-const shadowRoot = container.attachShadow({ mode: "open" });
+  // ★ 究極の魔法：bodyやframesetの中ではなく、大元の <html> 直下に追加！
+  // これにより、フレームの壁を無視して画面全体の上にUIが浮遊します！！
+  document.documentElement.appendChild(root);
 
-// 3. バリアの中にさらにReact描画用の箱を作る
-const rootElement = document.createElement("div");
-shadowRoot.appendChild(rootElement);
-
-// 4. Reactをレンダリング！！！
-const root = createRoot(rootElement);
-root.render(
-  <React.StrictMode>
-    <StockPalette />
-  </React.StrictMode>
-);
+  ReactDOM.createRoot(root).render(
+    <React.StrictMode>
+      <StockPalette />
+    </React.StrictMode>
+  );
+}
