@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react'; // ★ useRefを追加！
 import { Sparkles } from 'lucide-react';
 import { useHuntingMode } from '../hooks/useHuntingMode';
 import { useStockStorage } from '../hooks/useStockStorage';
@@ -13,9 +13,21 @@ export const StockPalette: React.FC = () => {
   const { grabbedText, setGrabbedText } = useDropMode();
   const [isMinimized, setIsMinimized] = useState(true);
   const [pos, setPos] = useState({ x: -1, y: -1 });
-
-  // ★★★ 追加：ドラッグ中かどうかを判定するState ★★★
   const [isDragging, setIsDragging] = useState(false);
+
+  // ★★★ 追加：パレットの正確なサイズを測るセンサー ★★★
+  const paletteRef = useRef<HTMLDivElement>(null);
+  const [expandedSize, setExpandedSize] = useState({ w: 300, h: 350 });
+
+  // 展開されたりアイテムが増えたりした瞬間に、実際の高さを計測して更新！
+  useEffect(() => {
+    if (!isMinimized && paletteRef.current) {
+      setExpandedSize({
+        w: paletteRef.current.offsetWidth,
+        h: paletteRef.current.offsetHeight
+      });
+    }
+  }, [isMinimized, stockList.length, grabbedText]);
 
   // Ctrl+C 自動吸い上げ
   useEffect(() => {
@@ -45,11 +57,10 @@ export const StockPalette: React.FC = () => {
     return () => chrome.storage.onChanged.removeListener(listener);
   }, []);
 
-  // ★★★ 安定の MouseEvent に戻しつつ、シールドを展開！ ★★★
+  // ドラッグ操作（透明シールド方式）
   const handleMinimizeMouseDown = (e: React.MouseEvent) => {
     e.preventDefault();
-    setIsDragging(true); // ★ シールド展開！
-
+    setIsDragging(true);
     const startX = e.clientX;
     const startY = e.clientY;
     let currentX = pos.x !== -1 ? pos.x : e.currentTarget.getBoundingClientRect().left;
@@ -62,7 +73,7 @@ export const StockPalette: React.FC = () => {
     };
 
     const onMouseUp = (upEvent: MouseEvent) => {
-      setIsDragging(false); // ★ シールド解除！
+      setIsDragging(false);
       document.removeEventListener('mousemove', onMouseMove);
       document.removeEventListener('mouseup', onMouseUp);
       if (!hasMoved) {
@@ -82,8 +93,7 @@ export const StockPalette: React.FC = () => {
     if (target.closest('button, li, input')) return; 
 
     e.preventDefault();
-    setIsDragging(true); // ★ シールド展開！
-
+    setIsDragging(true);
     const startX = e.clientX;
     const startY = e.clientY;
     let currentX = pos.x !== -1 ? pos.x : e.currentTarget.getBoundingClientRect().left;
@@ -94,7 +104,7 @@ export const StockPalette: React.FC = () => {
     };
 
     const onMouseUp = (upEvent: MouseEvent) => {
-      setIsDragging(false); // ★ シールド解除！
+      setIsDragging(false);
       document.removeEventListener('mousemove', onMouseMove);
       document.removeEventListener('mouseup', onMouseUp);
       const finalPos = { x: currentX + (upEvent.clientX - startX), y: currentY + (upEvent.clientY - startY) };
@@ -116,30 +126,21 @@ export const StockPalette: React.FC = () => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [setIsHunting, setGrabbedText]);
 
+  if (window !== window.top) return null;
 
-  // 親フレーム以外はUIを出さない
-  if (window !== window.top) {
-    return null; 
-  }
+  // ★★★ 究極の画面はみ出し防止ロジック ★★★
+  // 「今の正確なサイズ」を使って、画面外にはみ出さないように座標を強制補正！
+  const currentW = isMinimized ? 48 : expandedSize.w;
+  const currentH = isMinimized ? 48 : expandedSize.h;
+  const safeX = pos.x !== -1 ? Math.max(0, Math.min(pos.x, window.innerWidth - currentW)) : -1;
+  const safeY = pos.y !== -1 ? Math.max(0, Math.min(pos.y, window.innerHeight - currentH)) : -1;
 
-  // 画面はみ出し防止
-  const paletteWidth = isMinimized ? 48 : 280;
-  const paletteHeight = isMinimized ? 48 : 300; 
-  const safeX = pos.x !== -1 ? Math.max(0, Math.min(pos.x, window.innerWidth - paletteWidth)) : -1;
-  const safeY = pos.y !== -1 ? Math.max(0, Math.min(pos.y, window.innerHeight - paletteHeight)) : -1;
-
-  // ----------------------------------------------------
-  // 🔽 UIレンダリング：最上位に透明シールドを仕込む！
-  // ----------------------------------------------------
   return (
     <>
-      {/* ★★★ 魔法の透明シールド ★★★ */}
-      {/* ドラッグ中だけ画面全体を覆い尽くし、あらゆるイベントの吸い込みを防ぐ！ */}
       {isDragging && (
         <div style={{
           position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-          zIndex: 2147483646, // パレット(47)より1つ下の層
-          cursor: 'grabbing'
+          zIndex: 2147483646, cursor: 'grabbing'
         }} />
       )}
 
@@ -165,6 +166,7 @@ export const StockPalette: React.FC = () => {
         </div>
       ) : (
         <div 
+          ref={paletteRef} // ★ センサーを取り付け！
           onMouseDown={handlePaletteMouseDown}
           style={{
             position: 'fixed',
@@ -172,7 +174,10 @@ export const StockPalette: React.FC = () => {
             top: safeY !== -1 ? `${safeY}px` : 'auto',
             right: safeX === -1 ? '24px' : 'auto',
             bottom: safeY === -1 ? '24px' : 'auto',
-            width: '280px',
+            width: '300px', // ★ 少し広くして...
+            boxSizing: 'border-box', // ★ 余白を含めてピッタリ300pxに固定！
+            maxHeight: 'calc(100vh - 48px)', // ★ 画面の高さより絶対に大きくならない！
+            overflowY: 'auto', // ★ アイテムが増えたらパレット内をスクロールさせる！
             background: 'rgba(255, 255, 255, 0.95)', backdropFilter: 'blur(12px)',
             border: '1px solid rgba(226, 232, 240, 0.8)', borderRadius: '16px',
             padding: '14px', boxShadow: '0 20px 25px -5px rgba(15, 23, 42, 0.1), 0 8px 10px -6px rgba(15, 23, 42, 0.05)',
