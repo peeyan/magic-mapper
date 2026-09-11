@@ -47,21 +47,48 @@ export const ScreenCaptureTab: React.FC<Props> = ({ snapshots, activeUrl, active
 
           // ★ 2. Gmailの時だけ、テキストノードの分離（ラッピング）を実行する！
           if (isGmail) {
-            const wrapTextNodes = (node: Node) => {
-              if (['SCRIPT', 'STYLE', 'TEXTAREA', 'INPUT', 'SELECT', 'OPTION'].includes(node.nodeName)) return;
-              if ((node as HTMLElement).classList && (node as HTMLElement).classList.contains('magic-mapper-text-wrapper')) return;
-
-              const childNodes = Array.from(node.childNodes);
-              for (const child of childNodes) {
-                if (child.nodeType === Node.TEXT_NODE && child.nodeValue && child.nodeValue.trim() !== '') {
-                  const wrapper = targetDoc.createElement('span');
-                  wrapper.className = 'magic-mapper-text-wrapper';
-                  wrapper.textContent = child.nodeValue;
-                  node.replaceChild(wrapper, child);
-                } else if (child.nodeType === Node.ELEMENT_NODE) {
-                  wrapTextNodes(child);
+            const wrapTextNodes = (bodyElement: HTMLElement) => {
+              // TreeWalkerでテキストノードのみを抽出
+              const walker = document.createTreeWalker(
+                bodyElement,
+                NodeFilter.SHOW_TEXT,
+                {
+                  acceptNode: (node) => {
+                    const parent = node.parentNode as HTMLElement;
+                    if (!parent) return NodeFilter.FILTER_REJECT;
+                    // 絶対にラップしてはいけない非表示タグ・機能タグを除外
+                    const ignoreTags = ['SCRIPT', 'STYLE', 'NOSCRIPT', 'TEXTAREA', 'INPUT', 'OPTION', 'IFRAME'];
+                    if (ignoreTags.includes(parent.nodeName)) {
+                      return NodeFilter.FILTER_REJECT;
+                    }
+                    // 空白・改行のみのテキストノードは除外
+                    if (!node.nodeValue || node.nodeValue.trim() === '') {
+                      return NodeFilter.FILTER_REJECT;
+                    }
+                    // Aタグは明示的に許可（これがないと弾かれるケースがある）
+                    return NodeFilter.FILTER_ACCEPT;
+                  }
                 }
+              );
+
+              const nodesToWrap: Node[] = [];
+              let currentNode = walker.nextNode();
+              while (currentNode) {
+                nodesToWrap.push(currentNode);
+                currentNode = walker.nextNode();
               }
+              // 抽出したテキストノードを透明なspanで包む
+              nodesToWrap.forEach((node) => {
+                const wrapper = document.createElement('span');
+                wrapper.className = 'magic-mapper-text-wrapper';
+                // Aタグの中でラップされた場合でも、元サイトのレイアウト・デザインを継承させるための防御的CSS
+                wrapper.style.display = 'inline';
+                wrapper.style.color = 'inherit';
+                wrapper.style.textDecoration = 'inherit';
+
+                node.parentNode?.insertBefore(wrapper, node);
+                wrapper.appendChild(node);
+              });
             };
             wrapTextNodes(targetDoc.body);
           }
@@ -80,14 +107,15 @@ export const ScreenCaptureTab: React.FC<Props> = ({ snapshots, activeUrl, active
           };
 
           // 4. クリックで掴む処理
-          targetDoc.body.onclick = (ev: MouseEvent) => {
+          targetDoc.addEventListener('click', (ev: MouseEvent) => {
             const target = ev.target as HTMLElement;
             if (target.tagName === 'BODY' || target.tagName === 'HTML') return;
+            // aタグの遷移など、デフォルトの挙動を最優先で完全にブロック
             ev.preventDefault();
             ev.stopPropagation();
 
-            let text = (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') 
-              ? (target as HTMLInputElement).value 
+            let text = (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')
+              ? (target as HTMLInputElement).value
               : target.innerText;
             text = text ? text.trim() : '';
 
@@ -97,7 +125,7 @@ export const ScreenCaptureTab: React.FC<Props> = ({ snapshots, activeUrl, active
               target.classList.add('magic-mapper-flash');
               setTimeout(() => { target.classList.remove('magic-mapper-flash'); }, 200);
             }
-          };
+          }, true);
         };
 
         // メイン画面に魔法をかける
