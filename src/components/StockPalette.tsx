@@ -142,13 +142,14 @@ export const StockPalette: React.FC = () => {
             <StockList stockList={stockList} grabbedText={grabbedText} setGrabbedText={setGrabbedText} removeStock={removeStock} setIsHunting={setIsHunting} />
           </>
         ) : (
-          <ScreenCaptureTab 
+          <ScreenCaptureTab
             snapshots={snapshots}
             activeUrl={activeUrl}
             activeSnapshot={activeSnapshot}
             setActiveUrl={setActiveUrl}
-            onCapture={captureSnapshot} 
-            onClear={clearSnapshot} 
+            onCapture={captureSnapshot}
+            onClear={clearSnapshot}
+            setGrabbedText={setGrabbedText}
           />
         )}
         </div>

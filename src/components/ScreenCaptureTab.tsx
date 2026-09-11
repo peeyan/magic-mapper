@@ -1,8 +1,7 @@
 import React, { useState } from 'react';
 import { Camera, Trash2, ZoomIn } from 'lucide-react';
-import type { SnapshotData } from '../hooks/useSnapshotCapture'; // ★ 型をインポート
+import type { SnapshotData } from '../hooks/useSnapshotCapture';
 
-// ★ Propsを変更して、複数のデータを受け取れるようにする
 type Props = {
   snapshots: SnapshotData[];
   activeUrl: string | null;
@@ -10,25 +9,117 @@ type Props = {
   setActiveUrl: (url: string) => void;
   onCapture: () => void;
   onClear: (url: string) => void;
+  setGrabbedText: (text: string | null) => void;
 };
 
-export const ScreenCaptureTab: React.FC<Props> = ({ snapshots, activeUrl, activeSnapshot, setActiveUrl, onCapture, onClear }) => {
-  const [zoom, setZoom] = useState(0.6); 
+export const ScreenCaptureTab: React.FC<Props> = ({ snapshots, activeUrl, activeSnapshot, setActiveUrl, onCapture, onClear, setGrabbedText }) => {
+  const [zoom, setZoom] = useState(0.55); 
   const [iframeHeight, setIframeHeight] = useState(1080); 
 
   const handleIframeLoad = (e: React.SyntheticEvent<HTMLIFrameElement>) => {
     try {
-      const doc = e.currentTarget.contentDocument || e.currentTarget.contentWindow?.document;
+      const iframe = e.currentTarget;
+      const doc = iframe.contentDocument || iframe.contentWindow?.document;
       if (doc) {
         const realHeight = Math.max(doc.body.scrollHeight, doc.documentElement.scrollHeight, 1080);
         setIframeHeight(realHeight);
+
+        // ★ 先手の神修正：現在のURLを見て、Gmail（mail.google.com）かどうかを判定！
+        const isGmail = activeSnapshot?.url.includes('mail.google.com');
+
+        const attachSmartPicker = (targetDoc: Document) => {
+          // 1. 魔法のCSSクラス注入
+          if (!targetDoc.getElementById('magic-mapper-picker-style')) {
+            const style = targetDoc.createElement('style');
+            style.id = 'magic-mapper-picker-style';
+            style.innerHTML = `
+              .magic-mapper-hover {
+                outline: 2px dashed #6366f1 !important;
+                background-color: rgba(99, 102, 241, 0.15) !important;
+                cursor: grab !important;
+                border-radius: 2px !important;
+              }
+              .magic-mapper-flash { background-color: rgba(168, 85, 247, 0.5) !important; transition: background-color 0.2s !important; }
+              ${isGmail ? '.magic-mapper-text-wrapper { display: inline; }' : ''}
+            `;
+            targetDoc.head.appendChild(style);
+          }
+
+          // ★ 2. Gmailの時だけ、テキストノードの分離（ラッピング）を実行する！
+          if (isGmail) {
+            const wrapTextNodes = (node: Node) => {
+              if (['SCRIPT', 'STYLE', 'TEXTAREA', 'INPUT', 'SELECT', 'OPTION'].includes(node.nodeName)) return;
+              if ((node as HTMLElement).classList && (node as HTMLElement).classList.contains('magic-mapper-text-wrapper')) return;
+
+              const childNodes = Array.from(node.childNodes);
+              for (const child of childNodes) {
+                if (child.nodeType === Node.TEXT_NODE && child.nodeValue && child.nodeValue.trim() !== '') {
+                  const wrapper = targetDoc.createElement('span');
+                  wrapper.className = 'magic-mapper-text-wrapper';
+                  wrapper.textContent = child.nodeValue;
+                  node.replaceChild(wrapper, child);
+                } else if (child.nodeType === Node.ELEMENT_NODE) {
+                  wrapTextNodes(child);
+                }
+              }
+            };
+            wrapTextNodes(targetDoc.body);
+          }
+
+          // 3. 安全なclass付け外しによるホバー処理
+          targetDoc.body.onmouseover = (ev: MouseEvent) => {
+            const target = ev.target as HTMLElement;
+            if (target.tagName !== 'BODY' && target.tagName !== 'HTML') {
+              target.classList.add('magic-mapper-hover');
+            }
+          };
+
+          targetDoc.body.onmouseout = (ev: MouseEvent) => {
+            const target = ev.target as HTMLElement;
+            target.classList.remove('magic-mapper-hover');
+          };
+
+          // 4. クリックで掴む処理
+          targetDoc.body.onclick = (ev: MouseEvent) => {
+            const target = ev.target as HTMLElement;
+            if (target.tagName === 'BODY' || target.tagName === 'HTML') return;
+            ev.preventDefault();
+            ev.stopPropagation();
+
+            let text = (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') 
+              ? (target as HTMLInputElement).value 
+              : target.innerText;
+            text = text ? text.trim() : '';
+
+            if (text) {
+              setGrabbedText(text);
+              target.classList.remove('magic-mapper-hover');
+              target.classList.add('magic-mapper-flash');
+              setTimeout(() => { target.classList.remove('magic-mapper-flash'); }, 200);
+            }
+          };
+        };
+
+        // メイン画面に魔法をかける
+        attachSmartPicker(doc);
+
+        // 分割画面（iframe内）にも漏れなく魔法をかける
+        doc.querySelectorAll('iframe').forEach(innerIfr => {
+          try {
+            const innerDoc = innerIfr.contentDocument || innerIfr.contentWindow?.document;
+            if (innerDoc) attachSmartPicker(innerDoc);
+            innerIfr.addEventListener('load', () => {
+              const idoc = innerIfr.contentDocument || innerIfr.contentWindow?.document;
+              if (idoc) attachSmartPicker(idoc);
+            });
+          } catch (err) {}
+        });
       }
     } catch (err) {}
   };
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', height: '440px' }}>
-      
       <div style={{ display: 'flex', gap: '8px' }}>
         <button
           onClick={onCapture}
@@ -43,7 +134,6 @@ export const ScreenCaptureTab: React.FC<Props> = ({ snapshots, activeUrl, active
         )}
       </div>
 
-      {/* ★★★ 新機能：保存した画面の切り替えメニュー ★★★ */}
       {snapshots.length > 0 && (
         <select 
           value={activeUrl || ''} 
@@ -51,10 +141,7 @@ export const ScreenCaptureTab: React.FC<Props> = ({ snapshots, activeUrl, active
           style={{ padding: '8px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '13px', outline: 'none', cursor: 'pointer', background: '#f8fafc', color: '#334155', fontWeight: 'bold' }}
         >
           {snapshots.map(s => (
-            // 長すぎるURLは見栄えが悪いので少しカットして表示
-            <option key={s.url} value={s.url}>
-              {s.title} ({s.url.substring(0, 30)}...)
-            </option>
+            <option key={s.url} value={s.url}>{s.title} ({s.url.substring(0, 30)}...)</option>
           ))}
         </select>
       )}
@@ -71,10 +158,10 @@ export const ScreenCaptureTab: React.FC<Props> = ({ snapshots, activeUrl, active
             <div style={{ zoom: zoom, width: '1024px', height: `${iframeHeight}px` }}>
               <iframe 
                 name="magic-mapper-iframe" 
-                srcDoc={activeSnapshot.html} // ★ 選択中のHTMLを描画！
+                srcDoc={activeSnapshot.html}
                 onLoad={handleIframeLoad} 
                 style={{ width: '100%', height: '100%', border: 'none', background: '#fff' }} 
-                sandbox="allow-same-origin allow-scripts"
+                sandbox="allow-same-origin allow-scripts" 
               />
             </div>
           </div>

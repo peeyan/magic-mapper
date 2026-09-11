@@ -1,67 +1,84 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 
 export const useDropMode = () => {
-  const [grabbedText, setGrabbedTextLocal] = useState<string | null>(null);
+  const [grabbedText, setGrabbedText] = useState<string | null>(null);
 
-  // ★追加1：Storage監視
   useEffect(() => {
-    const listener = (changes: { [key: string]: chrome.storage.StorageChange }, area: string) => {
-      if (area === 'local' && changes.magicMapper_grabbedText) {
-        setGrabbedTextLocal((changes.magicMapper_grabbedText.newValue as string) || null);
+    if (!grabbedText) {
+      document.body.style.cursor = 'auto';
+      return;
+    }
+
+    document.body.style.cursor = 'crosshair';
+
+    const handleDropClick = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (target.closest('#magic-mapper-root')) return;
+
+      const isInput = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA';
+      const isEditable = target.isContentEditable;
+
+      if (isInput || isEditable) {
+        e.preventDefault();
+        e.stopPropagation();
+        target.focus();
+        
+        if (!document.execCommand('insertText', false, grabbedText)) {
+          if (isInput) {
+            (target as HTMLInputElement).value += grabbedText;
+            target.dispatchEvent(new Event('input', { bubbles: true }));
+          }
+        }
+        setGrabbedText(null);
+      } 
+      else {
+        // ★★★ スプレッドシート ＆ krewSheet 攻略ルート ★★★
+        // e.preventDefault() は呼ばず、まずは普通のセル選択を貫通させる
+
+        // 🚀【krewSheet特効】プログラムから強制的にダブルクリックを発射し、入力モードをこじ開ける！
+        target.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, cancelable: true, view: window }));
+
+        // セルの上に隠しエディタ（input）が立ち上がるのを 0.1秒だけ待つ
+        setTimeout(async () => {
+          try {
+            // 裏側でクリップボードには確実に装填しておく
+            await navigator.clipboard.writeText(grabbedText);
+            
+            // ダブルクリックによって出現した「隠し入力フォーム」を捕まえる！
+            const activeEl = document.activeElement as HTMLElement;
+            
+            if (activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA')) {
+              // krewSheetのエディタが無事に開いていれば、そこに直接流し込む！
+              document.execCommand('insertText', false, grabbedText);
+              // execCommandが効かなかった時の保険
+              if (!(activeEl as HTMLInputElement).value.includes(grabbedText)) {
+                (activeEl as HTMLInputElement).value += grabbedText;
+                activeEl.dispatchEvent(new Event('input', { bubbles: true }));
+              }
+            } else {
+              // エディタが開かなかった場合（Googleスプレッドシート等）は、標準のペーストイベントを叩き込む
+              const dt = new DataTransfer();
+              dt.setData('text/plain', grabbedText);
+              
+              // 念のため Ctrl+V のキーボードイベントも発火させておく
+              const keydown = new KeyboardEvent('keydown', { key: 'v', code: 'KeyV', keyCode: 86, ctrlKey: true, bubbles: true });
+              (activeEl || target).dispatchEvent(keydown);
+              
+              (activeEl || target).dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }));
+            }
+          } catch(err) {}
+          
+          setGrabbedText(null); // 完了したら手放す
+        }, 100); // 待機時間を 50ms -> 100ms に延長（エディタの起動を待つため）
       }
     };
-    chrome.storage.onChanged.addListener(listener);
-    return () => chrome.storage.onChanged.removeListener(listener);
-  }, []);
 
-  // ★追加2：Storage更新
-  const setGrabbedText = useCallback((val: string | null) => {
-    setGrabbedTextLocal(val);
-    chrome.storage.local.set({ magicMapper_grabbedText: val });
-  }, []);
-
-  const handleMouseOver = useCallback((e: MouseEvent) => {
-    const target = e.target as HTMLElement;
-    if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') {
-      target.style.outline = '3px solid #2ed573';
-      target.style.cursor = 'cell';
-    }
-  }, []);
-
-  const handleMouseOut = useCallback((e: MouseEvent) => {
-    const target = e.target as HTMLElement;
-    target.style.outline = '';
-    target.style.cursor = '';
-  }, []);
-
-  const handleClick = useCallback((e: MouseEvent) => {
-    if (!grabbedText) return;
-    const target = e.target as HTMLElement;
-    if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') {
-      e.preventDefault();
-      e.stopPropagation();
-      const inputElement = target as HTMLInputElement | HTMLTextAreaElement;
-      inputElement.value = grabbedText;
-      inputElement.dispatchEvent(new Event('input', { bubbles: true }));
-      inputElement.dispatchEvent(new Event('change', { bubbles: true }));
-      target.style.outline = '';
-      target.style.cursor = '';
-      setGrabbedText(null); // ★ドロップ完了時、全フレームに「離した」と通知
-    }
-  }, [grabbedText, setGrabbedText]);
-
-  useEffect(() => {
-    if (grabbedText !== null) {
-      document.addEventListener('mouseover', handleMouseOver, { capture: true });
-      document.addEventListener('mouseout', handleMouseOut, { capture: true });
-      document.addEventListener('click', handleClick, { capture: true });
-    }
+    document.addEventListener('click', handleDropClick, true);
     return () => {
-      document.removeEventListener('mouseover', handleMouseOver, { capture: true });
-      document.removeEventListener('mouseout', handleMouseOut, { capture: true });
-      document.removeEventListener('click', handleClick, { capture: true });
+      document.body.style.cursor = 'auto';
+      document.removeEventListener('click', handleDropClick, true);
     };
-  }, [grabbedText, handleMouseOver, handleMouseOut, handleClick]);
+  }, [grabbedText]);
 
   return { grabbedText, setGrabbedText };
 };
