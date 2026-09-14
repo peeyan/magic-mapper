@@ -71,7 +71,7 @@ export const useSnapshotCapture = () => {
                 const res = await fetch(sheet.href, { credentials: 'include' });
                 const text = await res.text();
                 sheetCss += text + '\n';
-              } catch(err) {} 
+              } catch(err) {}
             }
           }
           return sheetCss;
@@ -96,21 +96,17 @@ export const useSnapshotCapture = () => {
         let clean = html.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '');
         clean = clean.replace(/(<(iframe|frame)\b[^>]*?)\bsrc\s*=/gi, '$1data-disabled-src=');
         clean = clean.replace(/<meta[^>]+http-equiv=["']?refresh["']?[^>]*>/gi, '');
-        clean = clean.replace(/<link\b[^>]*rel=["']?stylesheet["']?[^>]*>/gi, '');
+        // ★ 神修正（再復活）：絶対に <link rel="stylesheet"> は消さない！Kintoneの命綱！
         return clean;
       };
 
+      // ★ Kintoneのレイアウトを妨害する body への強制 width / margin リセットも完全削除。
+      // これで Kintone の Flexbox や Grid は本来の計算通りに美しく配置されます。
       const getBaseStyles = () => `
         <style>
           ::-webkit-scrollbar { display: none !important; }
-          html, body {
-            width: 1024px !important; 
-            background-color: #fff !important; 
-            margin: 0 !important; 
-            padding: 0 !important;
-          }
-          .fade-in, .layer-frame, .layer { opacity: 1 !important; visibility: visible !important; animation: none !important; transition: none !important; }
           a { pointer-events: none !important; }
+          .fade-in { opacity: 1 !important; visibility: visible !important; animation: none !important; transition: none !important; }
         </style>
       `;
 
@@ -138,7 +134,6 @@ export const useSnapshotCapture = () => {
         const origIframes = doc.querySelectorAll('iframe, frame');
         const cloneIframes = htmlClone.querySelectorAll('iframe, frame');
         
-        // ★ 神修正：forEach をやめ、for...of で非同期処理（await）を可能にする！
         for (let i = 0; i < origIframes.length; i++) {
           const orig = origIframes[i];
           const clonedIfr = cloneIframes[i] as HTMLElement;
@@ -165,7 +160,6 @@ export const useSnapshotCapture = () => {
                 } catch(e){}
               });
               
-              // ★ iframe の中身の CSS も完璧に真空パックする！
               const innerBakedCSS = await bakeCSS(innerDoc);
               const innerHead = innerDoc.head ? sanitizeHtml(innerDoc.head.innerHTML) : '';
               const innerBody = innerDoc.body ? sanitizeHtml(innerDoc.body.innerHTML) : '';
@@ -173,7 +167,6 @@ export const useSnapshotCapture = () => {
               const innerBodyAttrs = innerDoc.body ? getAttributes(innerDoc.body) : '';
               const innerBaseTag = `<base href="${innerDoc.location?.href || url}">`;
 
-              // iframe用は最低限のスタイルのみ（1024px等を強制すると逆に崩れるため）
               const innerBaseStyles = `
                 <style>
                   ::-webkit-scrollbar { display: none !important; }
@@ -285,11 +278,61 @@ export const useSnapshotCapture = () => {
         const filtered = currentSnapshots.filter(s => s.url !== url);
         const updated = [newSnapshot, ...filtered];
         chrome.storage.local.set({ magicMapper_snapshots: updated });
-        setActiveUrl(url); 
+        setActiveUrl(url);
       });
 
     } catch (err) {
       alert('スナップショットの取得に失敗しました。');
+    }
+  };
+
+  const captureUrlOnly = async (): Promise<string | null> => {
+    try {
+      const topDoc = window.top?.document || document;
+      const url = topDoc.location.href;
+      const title = topDoc.title || '無題のページ';
+
+      try {
+        await navigator.clipboard.writeText(url);
+      } catch(e) {}
+
+      const snapshotHtml = `
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <style>
+              body { background: #f8fafc; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; font-family: sans-serif; color: #334155; }
+              .card { background: #fff; padding: 40px; border-radius: 12px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); border: 1px solid #e2e8f0; max-width: 80%; text-align: center; }
+              a { color: #4f46e5; text-decoration: none; word-break: break-all; font-weight: bold; font-size: 16px; margin-top: 16px; display: inline-block; }
+              a:hover { text-decoration: underline; }
+            </style>
+          </head>
+          <body>
+            <div class="card">
+              <div style="font-size: 40px; margin-bottom: 16px;">🔗</div>
+              <h2 style="margin: 0 0 8px 0; font-size: 18px;">${title}</h2>
+              <p style="margin: 0; color: #64748b; font-size: 14px;">このアイテムはURLのみストックされています</p>
+              <a href="${url}" target="_blank">${url}</a>
+            </div>
+          </body>
+        </html>
+      `;
+
+      const newSnapshot: SnapshotData = { url, title: `🔗 ${title}`, html: snapshotHtml };
+
+      chrome.storage.local.get(['magicMapper_snapshots'], (res) => {
+        const rawData = res.magicMapper_snapshots;
+        const currentSnapshots: SnapshotData[] = Array.isArray(rawData) ? rawData : [];
+        const filtered = currentSnapshots.filter(s => s.url !== url);
+        const updated = [newSnapshot, ...filtered];
+        chrome.storage.local.set({ magicMapper_snapshots: updated });
+        setActiveUrl(url);
+      });
+
+      return url;
+    } catch (err) {
+      alert('URLのストックに失敗しました。');
+      return null;
     }
   };
 
@@ -304,5 +347,5 @@ export const useSnapshotCapture = () => {
   };
 
   const activeSnapshot = snapshots.find(s => s.url === activeUrl) || null;
-  return { snapshots, activeUrl, setActiveUrl, activeSnapshot, captureSnapshot, clearSnapshot };
+  return { snapshots, activeUrl, setActiveUrl, activeSnapshot, captureSnapshot, captureUrlOnly, clearSnapshot };
 };

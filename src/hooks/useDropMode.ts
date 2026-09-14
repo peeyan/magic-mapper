@@ -4,12 +4,18 @@ export const useDropMode = () => {
   const [grabbedText, setGrabbedText] = useState<string | null>(null);
 
   useEffect(() => {
+    // 全フレームのカーソルをリセットする関数
+    const resetCursor = (win: Window) => {
+      try { win.document.body.style.cursor = 'auto'; } catch(e) {}
+      for (let i = 0; i < win.frames.length; i++) {
+        try { resetCursor(win.frames[i]); } catch(e) {}
+      }
+    };
+
     if (!grabbedText) {
-      document.body.style.cursor = 'auto';
+      resetCursor(window.top || window);
       return;
     }
-
-    document.body.style.cursor = 'crosshair';
 
     const handleDropClick = (e: MouseEvent) => {
       const target = e.target as HTMLElement;
@@ -21,14 +27,47 @@ export const useDropMode = () => {
       if (isInput || isEditable) {
         e.preventDefault();
         e.stopPropagation();
+        
+        // 1. まずフォーカスを当てて、AgileWorksなどの `onfocus` イベントを発火させる
         target.focus();
         
-        if (!document.execCommand('insertText', false, grabbedText)) {
-          if (isInput) {
-            (target as HTMLInputElement).value += grabbedText;
-            target.dispatchEvent(new Event('input', { bubbles: true }));
+        if (isInput) {
+          const inputTarget = target as HTMLInputElement | HTMLTextAreaElement;
+          
+          // ★ AgileWorks特化：onkeydown / onkeyup などの内部処理を呼び起こすための儀式
+          // 実際の入力前に、カラのキーイベントを発火させてシステム側を「入力状態」にさせる
+          inputTarget.dispatchEvent(new KeyboardEvent('keydown', { key: 'a', bubbles: true }));
+          inputTarget.dispatchEvent(new KeyboardEvent('keypress', { key: 'a', bubbles: true }));
+          
+          // ★ SPA（React/Vue等）の強固なState管理を突破する「ネイティブプロパティ強制上書き」
+          const prototype = inputTarget.tagName === 'INPUT' ? window.HTMLInputElement.prototype : window.HTMLTextAreaElement.prototype;
+          const nativeInputValueSetter = Object.getOwnPropertyDescriptor(prototype, 'value')?.set;
+
+          if (nativeInputValueSetter) {
+            nativeInputValueSetter.call(inputTarget, inputTarget.value + grabbedText);
+          } else {
+            inputTarget.value += grabbedText;
+          }
+          
+          // 強制的に入力イベントを発火させ、システム側に「人間が入力した」と錯覚させる
+          inputTarget.dispatchEvent(new Event('input', { bubbles: true }));
+          inputTarget.dispatchEvent(new Event('change', { bubbles: true }));
+          
+          // ★ AgileWorks特化：入力完了として、keyup と blur（フォーカスアウト）を発火させる
+          inputTarget.dispatchEvent(new KeyboardEvent('keyup', { key: 'a', bubbles: true }));
+          
+          // AgileWorksは `onblur` で値の妥当性チェック（DateCheckなど）を行っているため、
+          // 意図的にフォーカスを外して保存処理を走らせる
+          setTimeout(() => {
+            inputTarget.blur();
+          }, 50);
+          
+        } else if (isEditable) {
+          if (!document.execCommand('insertText', false, grabbedText)) {
+            target.innerText += grabbedText;
           }
         }
+        
         setGrabbedText(null);
       } 
       else {
@@ -69,14 +108,38 @@ export const useDropMode = () => {
           } catch(err) {}
           
           setGrabbedText(null); // 完了したら手放す
-        }, 100); // 待機時間を 50ms -> 100ms に延長（エディタの起動を待つため）
+        }, 100);
       }
     };
 
-    document.addEventListener('click', handleDropClick, true);
+    // ★ フレーム貫通：トップのwindowだけでなく、奥底のiframe/framesetにもイベントを仕掛ける
+    const attachToAllFrames = (win: Window) => {
+      try {
+        win.document.body.style.cursor = 'crosshair';
+        win.document.addEventListener('click', handleDropClick, true);
+      } catch (e) {} // CORSエラーになる別ドメインのiframeは無視
+      
+      for (let i = 0; i < win.frames.length; i++) {
+        try { attachToAllFrames(win.frames[i]); } catch (e) {}
+      }
+    };
+
+    const detachFromAllFrames = (win: Window) => {
+      try {
+        win.document.body.style.cursor = 'auto';
+        win.document.removeEventListener('click', handleDropClick, true);
+      } catch (e) {}
+      
+      for (let i = 0; i < win.frames.length; i++) {
+        try { detachFromAllFrames(win.frames[i]); } catch (e) {}
+      }
+    };
+
+    const topWindow = window.top || window;
+    attachToAllFrames(topWindow);
+
     return () => {
-      document.body.style.cursor = 'auto';
-      document.removeEventListener('click', handleDropClick, true);
+      detachFromAllFrames(topWindow);
     };
   }, [grabbedText]);
 

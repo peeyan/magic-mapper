@@ -1,14 +1,15 @@
 import React from 'react';
-import { Crosshair, SquareActivity, Eraser, Hash, X } from 'lucide-react'; // ★ X を追加！
+import { Crosshair, SquareActivity, Eraser, Hash, X, Link2 } from 'lucide-react'; // ★ Link2 を追加！
 
 type Props = {
   isHunting: boolean;
   setIsHunting: (val: boolean) => void;
   grabbedText: string | null;
   setGrabbedText: (val: string | null) => void;
+  onCaptureUrlOnly: () => Promise<string | null>; // ★ 追加！
 };
 
-export const ActionArea: React.FC<Props> = ({ isHunting, setIsHunting, grabbedText, setGrabbedText }) => {
+export const ActionArea: React.FC<Props> = ({ isHunting, setIsHunting, grabbedText, setGrabbedText, onCaptureUrlOnly }) => {
   return (
     <>
       <button
@@ -17,7 +18,7 @@ export const ActionArea: React.FC<Props> = ({ isHunting, setIsHunting, grabbedTe
           setIsHunting(!isHunting);
         }}
         style={{
-          width: '100%', padding: '10px 14px', marginBottom: '12px',
+          width: '100%', padding: '10px 14px', marginBottom: '8px', // 余白を少し詰めてグループ感を出す
           background: isHunting ? 'linear-gradient(135deg, #f43f5e, #e11d48)' : 'linear-gradient(135deg, #10b981, #059669)',
           color: 'white', border: 'none', borderRadius: '10px', fontWeight: '600', fontSize: '13px',
           cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
@@ -29,10 +30,26 @@ export const ActionArea: React.FC<Props> = ({ isHunting, setIsHunting, grabbedTe
         {isHunting ? 'ストック停止' : 'テキストをストックする'}
       </button>
 
+      {/* ★ 追加：爆速「URLコピー＆保存」ボタン */}
+      <button
+        onClick={async () => {
+          const url = await onCaptureUrlOnly();
+          if (url) setGrabbedText(url); // コピー成功したらホールド状態にする
+        }}
+        style={{
+          width: '100%', padding: '8px 14px', marginBottom: '12px',
+          background: '#f8fafc', color: '#475569', border: '1px solid #cbd5e1', borderRadius: '8px',
+          fontWeight: '600', fontSize: '12px', cursor: 'pointer', display: 'flex',
+          alignItems: 'center', justifyContent: 'center', gap: '6px',
+        }}
+        title="画面は保存せず、URLだけを即座にストック"
+      >
+        <Link2 size={14} /> URLをストックする
+      </button>
+
       {grabbedText && (
         <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', padding: '10px', marginBottom: '12px', borderRadius: '10px', fontSize: '12px' }}>
 
-          {/* ★ここを修正：ヘッダー部分に解除（✖）ボタンを設置！ */}
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#166534', fontWeight: '600' }}>
               <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#22c55e' }}></span>

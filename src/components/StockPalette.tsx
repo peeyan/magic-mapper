@@ -22,7 +22,7 @@ export const StockPalette: React.FC = () => {
 
   // ★ 分離したカスタムフックを呼び出すだけ！
   useClipboardStock(addStock, activeTab === 'individual');
-  const { snapshots, activeUrl, activeSnapshot, setActiveUrl, captureSnapshot, clearSnapshot } = useSnapshotCapture();
+  const { snapshots, activeUrl, activeSnapshot, setActiveUrl, captureSnapshot, clearSnapshot, captureUrlOnly } = useSnapshotCapture();
 
   const paletteRef = useRef<HTMLDivElement>(null);
   const [expandedSize, setExpandedSize] = useState({ w: 340, h: 480 });
@@ -138,7 +138,7 @@ export const StockPalette: React.FC = () => {
 
           {activeTab === 'individual' ? (
           <>
-            <ActionArea isHunting={isHunting} setIsHunting={setIsHunting} grabbedText={grabbedText} setGrabbedText={setGrabbedText} />
+            <ActionArea isHunting={isHunting} setIsHunting={setIsHunting} grabbedText={grabbedText} setGrabbedText={setGrabbedText} onCaptureUrlOnly={captureUrlOnly} />
             <StockList stockList={stockList} grabbedText={grabbedText} setGrabbedText={setGrabbedText} removeStock={removeStock} setIsHunting={setIsHunting} />
           </>
         ) : (
